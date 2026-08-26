@@ -75,3 +75,9 @@ Carried over from the design handoff, unresolved:
    retention cap?
 4. PDF export: server-side render (recommended) or on-device?
 5. Which CRM should enquiries and shared audits land in?
+
+## Backend
+
+`src/state/scoring.ts` is a client-side mock — see "What's a placeholder"
+above. Wiring a real backend (auth, audit storage, scoring, benchmarks) is
+tracked as follow-up work.
