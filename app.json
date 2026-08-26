@@ -38,6 +38,10 @@
     "web": {
       "favicon": "./assets/favicon.png",
       "backgroundColor": "#08090A"
+    },
+    "extra": {
+      "supabaseUrl": "https://hpyguusedttrwribiynq.supabase.co",
+      "supabaseAnonKey": "sb_publishable_euhlQ3T6CFGbDJ6FrSHe2w_hnyiYxOV"
     }
   }
 }

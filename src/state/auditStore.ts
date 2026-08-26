@@ -3,6 +3,7 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { QUESTIONS } from '../data/questions';
 import { runScoring } from './scoring';
+import { runRemoteScoring } from './remoteScoring';
 import type { AuditHistoryEntry, AuditRecord, AuthState, ScoringResult, ScoringStatus } from './types';
 
 function newAuditId() {
@@ -99,23 +100,39 @@ export const useAuditStore = create<AuditStore>()(
 
       runScoringForAudit: async () => {
         set({ scoringStatus: 'running' });
+        const audit = get().audit;
+
+        let result;
+        let serverAuditId = audit.auditId;
         try {
-          const result = await runScoring(get().audit);
-          const entry: AuditHistoryEntry = {
-            auditId: get().audit.auditId,
-            brand: get().audit.brand,
-            date: new Date().toISOString(),
-            overallScore: result.overallScore,
-          };
-          set((s) => ({
-            scoringStatus: 'done',
-            scoringResult: result,
-            audit: { ...s.audit, status: 'scored' },
-            history: [entry, ...s.history.filter((h) => h.auditId !== entry.auditId)],
-          }));
-        } catch {
-          set({ scoringStatus: 'error' });
+          const remote = await runRemoteScoring(audit);
+          result = remote;
+          serverAuditId = remote.auditId;
+        } catch (err) {
+          // No session / no network / backend not set up yet — never block
+          // an in-progress audit. Fall back to the local mock so the user
+          // still gets a result; only the peer benchmark isn't real.
+          console.warn('[scoring] remote scoring unavailable, using local fallback:', err);
+          try {
+            result = await runScoring(audit);
+          } catch {
+            set({ scoringStatus: 'error' });
+            return;
+          }
         }
+
+        const entry: AuditHistoryEntry = {
+          auditId: serverAuditId,
+          brand: audit.brand,
+          date: new Date().toISOString(),
+          overallScore: result.overallScore,
+        };
+        set((s) => ({
+          scoringStatus: 'done',
+          scoringResult: result,
+          audit: { ...s.audit, auditId: serverAuditId, status: 'scored' },
+          history: [entry, ...s.history.filter((h) => h.auditId !== entry.auditId)],
+        }));
       },
 
       toggleGapExpanded: (rank) =>
