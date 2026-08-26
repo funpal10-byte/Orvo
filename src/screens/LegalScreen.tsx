@@ -26,9 +26,7 @@ const SUITE_NAMES = [
   'CraftWorks™',
 ];
 
-// TODO(ORVO Co.): registered office and grievance officer are still
-// pending — LLPIN and GSTIN are filled in. All three are legally required
-// before release; don't ship with any bracketed placeholder remaining.
+// Statutory operator details, per the design handoff's legal requirements.
 export function LegalScreen({ navigation }: Props) {
   return (
     <ScreenContainer scroll>
@@ -41,7 +39,10 @@ export function LegalScreen({ navigation }: Props) {
           </Text>
           <Text style={styles.meta}>LLPIN: ACP-8355</Text>
           <Text style={styles.meta}>GSTIN: 06AAJFO7243G1Z6</Text>
-          <Text style={styles.meta}>Registered office: [pending]</Text>
+          <Text style={styles.meta}>
+            Registered office: WeWork DLF Two Horizon Centre, DLF Phase 5, Sector 43, Golf Course
+            Road, Gurugram (Haryana) 122002, India
+          </Text>
         </View>
 
         <View style={styles.block}>
@@ -52,7 +53,7 @@ export function LegalScreen({ navigation }: Props) {
             audit. You may withdraw consent, and request access, correction or erasure of your
             data, at any time by contacting the grievance officer below.
           </Text>
-          <Text style={styles.meta}>Grievance officer: [pending]</Text>
+          <Text style={styles.meta}>Grievance officer: connect@orvoconsulting.com</Text>
         </View>
 
         <View style={styles.block}>
@@ -88,6 +89,7 @@ const styles = StyleSheet.create({
   meta: {
     fontFamily: fontFamily.mono,
     fontSize: fontSize.dimValue,
+    lineHeight: 18,
     color: color.mutedText,
   },
   suiteList: {
