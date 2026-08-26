@@ -26,10 +26,9 @@ const SUITE_NAMES = [
   'CraftWorks™',
 ];
 
-// TODO(ORVO Co.): replace the bracketed placeholders with the real LLPIN,
-// GSTIN, registered office and grievance officer details before release —
-// these are legally required fields the design handoff calls out and must
-// not ship as placeholder text.
+// TODO(ORVO Co.): registered office and grievance officer are still
+// pending — LLPIN and GSTIN are filled in. All three are legally required
+// before release; don't ship with any bracketed placeholder remaining.
 export function LegalScreen({ navigation }: Props) {
   return (
     <ScreenContainer scroll>
@@ -40,8 +39,8 @@ export function LegalScreen({ navigation }: Props) {
           <Text style={styles.p}>
             This app is operated by ORVO Co., the trading name of Orvo Consulting LLP.
           </Text>
-          <Text style={styles.meta}>LLPIN: [pending]</Text>
-          <Text style={styles.meta}>GSTIN: [pending]</Text>
+          <Text style={styles.meta}>LLPIN: ACP-8355</Text>
+          <Text style={styles.meta}>GSTIN: 06AAJFO7243G1Z6</Text>
           <Text style={styles.meta}>Registered office: [pending]</Text>
         </View>
 
