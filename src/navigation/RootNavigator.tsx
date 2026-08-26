@@ -1,5 +1,6 @@
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { AssessmentScreen } from '../screens/AssessmentScreen';
+import { AuthScreen } from '../screens/AuthScreen';
 import { GapsScreen } from '../screens/GapsScreen';
 import { HomeScreen } from '../screens/HomeScreen';
 import { LegalScreen } from '../screens/LegalScreen';
@@ -25,6 +26,7 @@ export function RootNavigator() {
       }}
     >
       <Stack.Screen name="welcome" component={WelcomeScreen} />
+      <Stack.Screen name="auth" component={AuthScreen} />
       <Stack.Screen name="home" component={HomeScreen} />
       <Stack.Screen name="setup" component={SetupScreen} />
       <Stack.Screen name="assessment" component={AssessmentScreen} />

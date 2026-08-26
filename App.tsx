@@ -2,12 +2,12 @@ import { NavigationContainer } from '@react-navigation/native';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Linking, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { RootNavigator } from './src/navigation/RootNavigator';
 import { useAppFonts } from './src/theme/useAppFonts';
 import { color } from './src/theme/tokens';
-import { ensureSignedIn } from './src/lib/supabase';
+import { completeAuthFromUrl, ensureSignedIn } from './src/lib/supabase';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -27,6 +27,19 @@ export default function App() {
     ensureSignedIn().catch((err) => {
       console.warn('[supabase] anonymous sign-in failed:', err.message);
     });
+  }, []);
+
+  useEffect(() => {
+    // Completes sign-in when the app is opened via the magic-link email
+    // (orvo://auth-callback) — both for a cold start (getInitialURL) and
+    // for the app already running in the background (the 'url' event).
+    Linking.getInitialURL().then((url) => {
+      if (url) completeAuthFromUrl(url).catch(() => {});
+    });
+    const sub = Linking.addEventListener('url', ({ url }) => {
+      completeAuthFromUrl(url).catch(() => {});
+    });
+    return () => sub.remove();
   }, []);
 
   const onLayoutRootView = useCallback(() => {

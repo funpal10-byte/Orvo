@@ -34,7 +34,7 @@ export function WelcomeScreen({ navigation }: Props) {
               navigation.navigate('setup');
             }}
           />
-          <GhostButton label="Sign in" onPress={() => navigation.navigate('home')} />
+          <GhostButton label="Sign in" onPress={() => navigation.navigate('auth')} />
         </View>
       </View>
       <Pressable
