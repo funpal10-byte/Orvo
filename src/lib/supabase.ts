@@ -3,7 +3,13 @@ import 'react-native-url-polyfill/auto';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import * as Linking from 'expo-linking';
+import * as WebBrowser from 'expo-web-browser';
 import { createClient } from '@supabase/supabase-js';
+
+// Lets the in-app browser sheet close itself and hand control back to the
+// app once Google redirects to the callback URL — standard Expo boilerplate
+// for any WebBrowser-based OAuth flow.
+WebBrowser.maybeCompleteAuthSession();
 
 const extra = Constants.expoConfig?.extra ?? {};
 const supabaseUrl = extra.supabaseUrl as string | undefined;
@@ -72,6 +78,42 @@ export async function sendMagicLink(email: string): Promise<void> {
 
   const { error } = await supabase.auth.signInWithOtp({ email, options: { emailRedirectTo } });
   if (error) throw new Error(error.message);
+}
+
+// Google sign-in. Same split as sendMagicLink and for the same reason:
+// - Anonymous session (mid/post-audit): upgrade that SAME auth.uid() via
+//   linkIdentity, so audits already saved under it stay attached.
+// - No session / returning user from Welcome's "Sign in": signInWithOAuth,
+//   a fresh sign-in.
+// Both open the system browser for Google's consent screen, then return to
+// the app via the same orvo://auth-callback deep link the magic-link flow
+// uses — completeAuthFromUrl finishes it either way.
+//
+// NOT verified live — see the note on completeAuthFromUrl below. Both
+// linkIdentity and signInWithOAuth are confirmed present on the installed
+// @supabase/supabase-js (2.112.4), so this is a live-testing gap, not an
+// API-guessing one.
+export async function signInWithGoogle(): Promise<void> {
+  const redirectTo = authRedirectUrl();
+  const anon = await isAnonymousSession();
+
+  const { data, error } = anon
+    ? await supabase.auth.linkIdentity({ provider: 'google', options: { redirectTo } })
+    : await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo, skipBrowserRedirect: true },
+      });
+
+  if (error) throw new Error(error.message);
+  if (!data?.url) throw new Error('Supabase did not return a Google sign-in URL.');
+
+  const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+  if (result.type === 'success' && result.url) {
+    const ok = await completeAuthFromUrl(result.url);
+    if (!ok) throw new Error('Could not complete Google sign-in.');
+  } else if (result.type !== 'cancel' && result.type !== 'dismiss') {
+    throw new Error(`Google sign-in did not complete (${result.type}).`);
+  }
 }
 
 // Completes the magic-link flow when the app is opened via the callback

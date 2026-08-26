@@ -20,6 +20,24 @@ One-time setup, ~2 minutes, all in the Supabase dashboard (no CLI, no service-ro
    `src/screens/ReportScreen.tsx`). Without this, the link in the email
    won't be allowed to open the app.
 
+4. **Set up Google sign-in** (needs a Google Cloud account — separate from
+   Supabase):
+   a. [console.cloud.google.com](https://console.cloud.google.com) → create
+      or pick a project → **APIs & Services → OAuth consent screen** →
+      configure it (External, app name "Orvo", your support email). Keep it
+      in "Testing" mode for now and add your own email as a test user —
+      publishing to production requires Google's verification, not needed
+      yet.
+   b. **APIs & Services → Credentials → Create Credentials → OAuth client
+      ID** → type **Web application**.
+   c. In the Supabase dashboard, go to **Authentication → Sign In /
+      Providers → Google** and copy the **Callback URL (for OAuth)** shown
+      there (looks like `https://hpyguusedttrwribiynq.supabase.co/auth/v1/callback`).
+      Paste that into the Google Cloud form's **Authorized redirect URIs**.
+   d. Google gives you a **Client ID** and **Client Secret** — paste both
+      into that same Supabase Google provider screen, toggle it **on**, and
+      save.
+
 That's it — the app already has the project URL and publishable key wired
 in (`app.json` → `expo.extra`). Both are safe to commit: the publishable
 (anon) key is meant to ship inside the client bundle, and every table it can
@@ -40,27 +58,34 @@ Still open (see the main README's "Open questions for ORVO Co." section):
   currently generic questions grounded in Interbrand's brand-strength
   factors (Trust/Affinity, Presence/Participation, Direction/Alignment/
   Empathy/Agility), not client-approved copy
-- PDF export, CRM routing, Google/Apple sign-in (email magic-link is done)
-- Paywall / premium tier — no pricing decided yet, not built
+- PDF export, CRM routing, Apple sign-in (email magic-link and Google are done)
+- Paywall — **decided: none for now.** Everything stays free post-login
+  while the customer database builds up; revisit pricing later.
 
-## Auth: magic-link, not tested live
+## Auth: email magic-link + Google, neither tested live
 
-`src/lib/supabase.ts` (`sendMagicLink`, `completeAuthFromUrl`) and
-`AuthScreen.tsx` implement email magic-link sign-in, plus linking an
-anonymous session's audits to a new account at export
-(`ReportScreen.tsx`'s "Save this audit" card) — matching the handoff's
-"account requested at export" flow.
+`src/lib/supabase.ts` (`sendMagicLink`, `signInWithGoogle`,
+`completeAuthFromUrl`), `AuthScreen.tsx`, and the "Save this audit" card on
+`ReportScreen.tsx` implement both. Both link an anonymous session's audits
+to the new account (via `updateUser`/`linkIdentity`) rather than starting a
+fresh one, so nothing already saved gets orphaned — matching the handoff's
+"account requested at export" flow, plus a same "Sign in" entry point on
+Welcome for returning users.
 
-This piece could **not be tested against a live Supabase project** — the
-sandbox this was built in blocks outbound network to `supabase.co` and
+Neither could be **tested against a live Supabase project** — the sandbox
+this was built in blocks outbound network to `supabase.co` and
 `supabase.com` entirely (policy, not a bug). The rest of the backend was
 verified this way too but degrades safely when unreachable (falls back to
-local mock scoring); this can't degrade the same way since there's no local
-fallback for "confirm an email." **Test the full loop on a real device
-before relying on it**: tap "Send sign-in link" → open the email on the
-same device → confirm it lands back in the app signed in. If
-`exchangeCodeForSession` errors, the most likely cause is step 3 above
-(redirect URL) not being added yet.
+local mock scoring); auth can't degrade the same way since there's no local
+fallback for "confirm an email" or "finish a Google consent screen".
+**Test both loops on a real device before relying on them:**
+- Email: tap "Send sign-in link" → open the email on the same device →
+  confirm it lands back in the app signed in.
+- Google: tap "Continue with Google" → complete the consent screen → confirm
+  it returns to the app signed in.
+
+If either errors on the redirect step, check step 3 (redirect URL) and step
+4 (Google provider config) above are both done.
 
 ## Why one RPC instead of the handoff's 3 separate endpoints
 

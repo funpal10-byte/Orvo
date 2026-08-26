@@ -1,11 +1,12 @@
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { GhostButton } from '../components/GhostButton';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { SectionLabel } from '../components/SectionLabel';
-import { isAnonymousSession, sendMagicLink } from '../lib/supabase';
+import { isAnonymousSession, sendMagicLink, signInWithGoogle } from '../lib/supabase';
 import { color, fontFamily, fontSize } from '../theme/tokens';
 import type { RootStackParamList } from '../navigation/types';
 
@@ -29,6 +30,7 @@ function SaveAuditPrompt() {
   const [sent, setSent] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [googleBusy, setGoogleBusy] = useState(false);
 
   useEffect(() => {
     isAnonymousSession()
@@ -54,6 +56,20 @@ function SaveAuditPrompt() {
     }
   };
 
+  const onGoogle = async () => {
+    if (googleBusy) return;
+    setGoogleBusy(true);
+    setError(null);
+    try {
+      await signInWithGoogle();
+      setIsAnon(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Google sign-in failed. Try again.');
+    } finally {
+      setGoogleBusy(false);
+    }
+  };
+
   return (
     <View style={styles.saveCard}>
       <SectionLabel>Save this audit</SectionLabel>
@@ -66,6 +82,11 @@ function SaveAuditPrompt() {
           <Text style={styles.saveBody}>
             Create an account so this audit (and future ones) aren't tied to just this device.
           </Text>
+          <GhostButton
+            label={googleBusy ? 'Opening Google…' : 'Continue with Google'}
+            onPress={onGoogle}
+          />
+          <Text style={styles.saveDivider}>or</Text>
           <View style={styles.saveRow}>
             <TextInput
               value={email}
@@ -149,6 +170,14 @@ const styles = StyleSheet.create({
     fontSize: fontSize.note,
     lineHeight: 20,
     color: color.bodyText,
+  },
+  saveDivider: {
+    alignSelf: 'center',
+    fontFamily: fontFamily.mono,
+    fontSize: 10,
+    letterSpacing: 1.4,
+    textTransform: 'uppercase',
+    color: color.mutedText,
   },
   saveRow: { flexDirection: 'row' },
   saveInput: {
