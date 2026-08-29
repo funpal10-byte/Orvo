@@ -42,6 +42,11 @@ export function ResultsScreen({ navigation }: Props) {
   }
 
   const dateLabel = new Date().toLocaleDateString(undefined, { month: 'short', year: 'numeric' });
+  const researchedCount = scoringResult.researchApplied.length;
+  const basisSummary =
+    researchedCount > 0
+      ? `Basis: your answers, blended with live research on ${researchedCount} of 6 dimensions.`
+      : 'Basis: your answers only — no live research was used for this audit.';
 
   return (
     <ScreenContainer footer={<TabBar active="results" onNavigate={onNavigateTab} />}>
@@ -74,9 +79,16 @@ export function ResultsScreen({ navigation }: Props) {
         </View>
 
         <View style={styles.dims}>
-          <SectionLabel>Six dimensions</SectionLabel>
+          <View style={styles.dimsHead}>
+            <SectionLabel>Six dimensions</SectionLabel>
+            <Text style={styles.basisSummary}>{basisSummary}</Text>
+          </View>
           {scoringResult.dimensions.map((d) => (
-            <DimensionBar key={d.key} dimension={d} />
+            <DimensionBar
+              key={d.key}
+              dimension={d}
+              researched={scoringResult.researchApplied.includes(d.key)}
+            />
           ))}
         </View>
 
@@ -149,6 +161,13 @@ const styles = StyleSheet.create({
     color: color.bodyText,
   },
   dims: { gap: 16 },
+  dimsHead: { gap: 5 },
+  basisSummary: {
+    fontFamily: fontFamily.body,
+    fontSize: 12,
+    lineHeight: 17,
+    color: color.mutedText,
+  },
   cta: { gap: 10, paddingTop: 4 },
   disclaimer: {
     fontFamily: fontFamily.body,

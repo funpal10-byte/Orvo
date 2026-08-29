@@ -2,6 +2,12 @@
 
 One-time setup, ~2 minutes, all in the Supabase dashboard (no CLI, no service-role key needed).
 
+**Already ran `schema.sql` before?** Re-run it — `score_new_audit` picked up
+a new `p_research` parameter and the `audits` table a new `research`
+column, both needed for the tiers below. Re-running is safe (same
+copy/paste/Run flow as before; it won't touch existing audit rows or
+benchmark data).
+
 1. **Run the schema.** Dashboard → your project → **SQL Editor → New query**.
    Paste the full contents of `schema.sql` and run it. Creates the tables,
    RLS policies, seed data (question weights, suite mapping) and the
@@ -38,6 +44,23 @@ One-time setup, ~2 minutes, all in the Supabase dashboard (no CLI, no service-ro
       into that same Supabase Google provider screen, toggle it **on**, and
       save.
 
+5. **Set up real research** (Standard/Deep audit tiers — Quick works
+   without this):
+   a. Get a free API key at [brave.com/search/api](https://brave.com/search/api)
+      (the free tier covers a few thousand queries/month — each audit uses
+      roughly 12-14 queries on Standard, 15-17 on Deep, so budget
+      accordingly if usage grows).
+   b. Dashboard → **Edge Functions → Deploy a new function**. Name it
+      exactly **`research-audit`**, then paste the full contents of
+      `functions/research-audit/index.ts` into the code editor and deploy —
+      no CLI needed, this is entirely in the browser.
+   c. Dashboard → **Edge Functions → research-audit → Manage secrets** (or
+      **Settings → Edge Functions → Secrets**) → add `BRAVE_API_KEY` with
+      the key from step (a).
+   d. Without this step the app still works — it just silently skips
+      research and scores from self-report only, same as the Quick tier,
+      regardless of which tier the user picked.
+
 That's it — the app already has the project URL and publishable key wired
 in (`app.json` → `expo.extra`). Both are safe to commit: the publishable
 (anon) key is meant to ship inside the client bundle, and every table it can
@@ -53,6 +76,51 @@ Real, in Postgres:
   submitted for that category (fully real by ~20 audits)
 - Audit storage, scoped to the signed-in (possibly anonymous) user via RLS
 
+Real, via the `research-audit` Edge Function + Brave Search API (Standard
+and Deep tiers — see "Research tiers" below):
+- Web presence for the brand and every named competitor
+- Recent news mentions for each
+- The brand's own site: auto-discovered (or the URL given at setup),
+  fetched, and checked for basic distinctiveness signals
+- Deep tier only: a live scan of LinkedIn/Instagram/X for what's being said
+  about the brand
+
+## Research tiers — why three, and why this beats a static self-report form
+
+Interbrand's real methodology (see the brand-strength framework this app's
+question bank is grounded in) is qualitative interviews + a multi-stakeholder
+survey + manual secondary research — thorough, but weeks of consultant time
+and not something a self-serve app can replicate. What an app *can* do that
+a one-off consulting engagement can't: check itself, automatically, against
+what's actually visible online, every time someone runs it — and be upfront
+about exactly which parts of the score are the user's word for it versus
+something independently verifiable.
+
+- **Quick** — the original handoff spec: 18 self-reported questions, ~12
+  minutes, works offline, no research. Always available regardless of the
+  setup below.
+- **Standard** — adds real web + news presence for the brand *and every
+  named competitor*, not just the brand, so "Competitive standing" is a
+  measured rank instead of a guess. Blended 50/50 into Search & answer
+  visibility, Competitive standing, and Distinctiveness (from the brand's
+  own site).
+- **Deep** — Standard, plus a live LinkedIn/Instagram/X scan for the brand,
+  blended into Perception. This is the closest the app gets to "what's
+  actually being said," short of full social-listening infrastructure.
+
+The blend is always 50/50 self-report vs. research where research exists
+for that dimension, and the app **tells the user which is which** — the
+Results screen labels every dimension "Your answers only" or "Your answers
++ live research," and a summary line up top states how many dimensions were
+research-backed for that specific audit. No dimension is ever silently
+"corrected" without saying so.
+
+What's still not automated, deliberately — real per-platform social APIs
+(Meta Graph API, LinkedIn API, X API) all require the *business's own*
+developer app + verification, which isn't something to set up unattended on
+someone else's behalf; the Deep tier's `site:` search proxy is the honest
+substitute until/unless ORVO Co. wants to register those apps directly.
+
 Still open (see the main README's "Open questions for ORVO Co." section):
 - Full question bank for dimensions 4–6 with ORVO Co.-approved weights —
   currently generic questions grounded in Interbrand's brand-strength
@@ -60,7 +128,14 @@ Still open (see the main README's "Open questions for ORVO Co." section):
   Empathy/Agility), not client-approved copy
 - PDF export, CRM routing, Apple sign-in (email magic-link and Google are done)
 - Paywall — **decided: none for now.** Everything stays free post-login
-  while the customer database builds up; revisit pricing later.
+  while the customer database builds up; revisit pricing later. Research
+  tier could become the natural free/paid boundary once pricing is decided
+  — the code already has three tiers, nothing gated behind payment yet.
+- Research blend weight (50/50) and the specific heuristics (share-of-voice
+  formula, distinctiveness point values, social-mention curve) are a
+  first-pass I designed, not calibrated against real outcomes or signed off
+  by ORVO Co. — expect to tune these once there's real audit volume to
+  check them against.
 
 ## Auth: email magic-link + Google, neither tested live
 

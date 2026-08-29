@@ -125,5 +125,6 @@ export async function runScoring(audit: AuditRecord): Promise<ScoringResult> {
     quartile: quartileFor(overallScore, peerMedian),
     dimensions,
     gaps,
+    researchApplied: [], // local fallback never has real research, whatever tier was picked
   };
 }

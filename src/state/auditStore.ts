@@ -4,7 +4,14 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import { QUESTIONS } from '../data/questions';
 import { runScoring } from './scoring';
 import { runRemoteScoring } from './remoteScoring';
-import type { AuditHistoryEntry, AuditRecord, AuthState, ScoringResult, ScoringStatus } from './types';
+import type {
+  AuditHistoryEntry,
+  AuditRecord,
+  AuthState,
+  ResearchTier,
+  ScoringResult,
+  ScoringStatus,
+} from './types';
 
 function newAuditId() {
   return `audit_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -17,6 +24,8 @@ function emptyAudit(): AuditRecord {
     category: '',
     market: '',
     competitors: [],
+    website: '',
+    researchTier: 'standard',
     answers: {},
     currentIndex: 0,
     status: 'in-progress',
@@ -35,7 +44,10 @@ type AuditStore = {
 
   setAuthState: (state: AuthState, userId?: string | null) => void;
   startNewAudit: () => void;
-  updateAuditFields: (fields: Partial<Pick<AuditRecord, 'brand' | 'category' | 'market'>>) => void;
+  updateAuditFields: (
+    fields: Partial<Pick<AuditRecord, 'brand' | 'category' | 'market' | 'website'>>,
+  ) => void;
+  setResearchTier: (tier: ResearchTier) => void;
   addCompetitor: (name: string) => void;
   removeCompetitor: (name: string) => void;
   answerQuestion: (questionId: string, optionId: string) => void;
@@ -69,6 +81,9 @@ export const useAuditStore = create<AuditStore>()(
 
       updateAuditFields: (fields) =>
         set((s) => ({ audit: { ...s.audit, ...fields } })),
+
+      setResearchTier: (researchTier) =>
+        set((s) => ({ audit: { ...s.audit, researchTier } })),
 
       addCompetitor: (name) =>
         set((s) => {

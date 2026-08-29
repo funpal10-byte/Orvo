@@ -26,12 +26,22 @@ export type AuditHistoryEntry = {
   overallScore: number;
 };
 
+// Quick: 18 self-reported questions only, no network needed to score.
+// Standard: adds real web + news presence (brand and every named
+// competitor) via Brave Search, blended into Search & answer visibility,
+// Competitive standing and Distinctiveness.
+// Deep: Standard, plus a live scan of what's being said about the brand on
+// LinkedIn/Instagram/X, blended into Perception.
+export type ResearchTier = 'quick' | 'standard' | 'deep';
+
 export type AuditRecord = {
   auditId: string;
   brand: string;
   category: string;
   market: string;
   competitors: string[];
+  website: string;
+  researchTier: ResearchTier;
   answers: Record<string, string>;
   currentIndex: number;
   status: 'in-progress' | 'scored';
@@ -44,4 +54,8 @@ export type ScoringResult = {
   quartile: 'top' | 'upper-mid' | 'lower-mid' | 'bottom';
   dimensions: DimensionResult[];
   gaps: Gap[];
+  // Dimension keys the research (not just self-report) actually
+  // contributed to for this specific audit — empty on the Quick tier, or
+  // when research was attempted but failed/returned nothing usable.
+  researchApplied: DimensionKey[];
 };

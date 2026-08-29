@@ -3,7 +3,10 @@
 A guided brand-audit app for ORVO Co. (Orvo Consulting LLP). A user answers 18
 questions across six brand dimensions, gets a score benchmarked against a
 peer set in their category, and a prioritised action list mapping each gap to
-an ORVO Co. service suite.
+an ORVO Co. service suite. Beyond pure self-report, three research tiers
+(Quick / Standard / Deep) blend in real web presence, competitor share of
+voice, and social-listening signal — see "Research tiers" in
+`supabase/README.md`.
 
 Built in React Native + Expo, recreating the 8-screen design handoff
 (`Original Voice Audit — mobile app`, PlatformOne™ Product 01) pixel-faithful
@@ -39,6 +42,7 @@ src/
   lib/                        supabase client + anonymous-auth bootstrap
 assets/brand/                 ORVO logo + ensō mark (production assets)
 supabase/                     schema.sql (tables, RLS, scoring function) + setup steps
+  functions/research-audit/    Edge Function: real web/news/social research via Brave Search
 ```
 
 ## Running it
@@ -81,6 +85,11 @@ now filled in with real values in `src/screens/LegalScreen.tsx`.
   magic-link or Google) is offered at export and from Welcome, and upgrades
   the same anonymous session rather than starting a fresh one, so nothing
   already saved gets orphaned.
+- **Research, transparently.** Self-report alone is easy to game or just get
+  wrong (a user's limited knowledge of their own market shouldn't quietly
+  become "the score"), so the user picks a research depth at setup and the
+  Results screen always labels which dimensions used real research versus
+  self-report only — see `supabase/README.md`'s "Research tiers".
 
 ## Open questions for ORVO Co. before a real launch
 
@@ -98,9 +107,11 @@ Carried over from the design handoff, still unresolved:
 Real, on Supabase — see `supabase/README.md` for one-time setup and what's
 real vs. still mocked. Short version: scoring weights, the dimension→suite
 mapping and peer benchmarks (seeded synthetically per category, blended
-toward real submitted scores as more audits come in) live in Postgres, and
-auth is email magic-link + Google (both upgrade an anonymous session in
-place, `src/lib/supabase.ts`). `src/state/scoring.ts` (the old client-side
-mock) is kept only as an offline/network-failure fallback in
-`runScoringForAudit` (`src/state/auditStore.ts`) — never blocks the user if
-Supabase is unreachable.
+toward real submitted scores as more audits come in) live in Postgres, auth
+is email magic-link + Google (both upgrade an anonymous session in place,
+`src/lib/supabase.ts`), and the `research-audit` Edge Function pulls real
+web/news/social signal via Brave Search for the Standard/Deep tiers.
+`src/state/scoring.ts` (the old client-side mock) is kept only as an
+offline/network-failure fallback in `runScoringForAudit`
+(`src/state/auditStore.ts`) — never blocks the user if Supabase is
+unreachable.

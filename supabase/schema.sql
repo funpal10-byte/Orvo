@@ -61,9 +61,15 @@ create table if not exists audits (
   quartile text,
   dimensions jsonb,
   gaps jsonb,
+  research jsonb,
   scoring_version int not null default 1,
   created_at timestamptz not null default now()
 );
+
+-- Patches the table if it already existed from an earlier run of this file
+-- (CREATE TABLE IF NOT EXISTS above is a no-op once the table exists, so a
+-- later new column needs its own ALTER).
+alter table audits add column if not exists research jsonb;
 
 create index if not exists audits_user_brand_idx on audits (user_id, brand, created_at desc);
 
@@ -138,14 +144,40 @@ on conflict (dimension) do update set suite_name = excluded.suite_name;
 -- into separate endpoints later if partial/resumable server-side audits are
 -- needed (the client already persists in-progress answers locally either
 -- way, per the offline requirement).
+--
+-- p_research (optional): the researched-signals payload from the
+-- research-audit Edge Function (supabase/functions/research-audit) — real
+-- web/news presence for the brand and every named competitor, not just
+-- self-reported answers. Shape: { brandKey: text, entities: { [name]:
+-- { webCount, newsCount, socialMentions?, site: { titleHasBrand,
+-- hasMetaDescription, hasStructuredData } | null } } }. When present,
+-- blends 50/50 into whichever dimensions it has a signal for: Search &
+-- answer visibility and Competitive standing from web/news share of voice
+-- (Standard tier and up), Distinctiveness from the brand's own site
+-- (Standard tier and up, only when a site was found), Perception from
+-- social mention volume (Deep tier only — socialMentions is only present
+-- then). Consistency and Internal alignment stay self-report-only always —
+-- nothing external reliably measures those. Pass null to skip entirely
+-- (the Quick tier) — degrades cleanly to the original self-report-only
+-- scoring either way, e.g. if the research call failed or the Brave API
+-- key isn't configured yet. The response's `researchApplied` array tells
+-- the client exactly which dimensions research actually touched for this
+-- specific audit, for the UI to label per-dimension basis honestly.
 -- ============================================================
+
+-- Postgres treats a changed parameter list as a distinct overload rather
+-- than replacing the function in place, so drop the earlier 5-argument
+-- version explicitly — otherwise a 5-arg call would silently keep hitting
+-- the old, research-blind function instead of this one.
+drop function if exists public.score_new_audit(text, text, text, text[], jsonb);
 
 create or replace function public.score_new_audit(
   p_brand text,
   p_category text,
   p_market text,
   p_competitors text[],
-  p_answers jsonb
+  p_answers jsonb,
+  p_research jsonb default null
 ) returns jsonb
 language plpgsql
 security definer
@@ -171,12 +203,92 @@ declare
   v_overall numeric;
   v_peer_median numeric;
   v_quartile text;
+  -- research blending
+  v_brand_key text;
+  v_entities jsonb;
+  v_entity_names text[];
+  v_name text;
+  v_total_presence numeric := 0;
+  v_brand_presence numeric := 0;
+  v_fair_share numeric;
+  v_presence_score numeric;
+  v_ranked_names text[];
+  v_brand_rank int;
+  v_n int;
+  v_standing_score numeric;
+  v_site jsonb;
+  v_distinct_score numeric;
+  v_social_mentions numeric;
+  v_social_score numeric;
+  v_research_scores jsonb := '{}'::jsonb;
 begin
   if auth.uid() is null then
     raise exception 'must be signed in (anonymous sign-in is fine)';
   end if;
 
-  -- 1. score each dimension from the 3 questions belonging to it
+  -- 0. turn research signals (if any) into per-dimension research scores
+  if p_research is not null and p_research ? 'entities' then
+    v_brand_key := p_research->>'brandKey';
+    v_entities := p_research->'entities';
+    select array_agg(k) into v_entity_names from jsonb_object_keys(v_entities) k;
+
+    if v_entity_names is not null and array_length(v_entity_names, 1) > 0 then
+      -- share of voice: brand's (web+news) mentions vs the whole named set,
+      -- indexed against an even split so exactly-fair-share = 50
+      foreach v_name in array v_entity_names loop
+        v_total_presence := v_total_presence
+          + coalesce((v_entities->v_name->>'webCount')::numeric, 0)
+          + coalesce((v_entities->v_name->>'newsCount')::numeric, 0);
+      end loop;
+      v_brand_presence := coalesce((v_entities->v_brand_key->>'webCount')::numeric, 0)
+        + coalesce((v_entities->v_brand_key->>'newsCount')::numeric, 0);
+      v_n := array_length(v_entity_names, 1);
+      v_fair_share := 1.0 / v_n;
+
+      if v_total_presence > 0 then
+        v_presence_score := least(100, greatest(0,
+          50.0 * (v_brand_presence / v_total_presence) / v_fair_share
+        ));
+        v_research_scores := v_research_scores || jsonb_build_object('Search & answer visibility', round(v_presence_score));
+      end if;
+
+      -- competitive standing: rank brand by presence among the named set
+      select array_agg(name order by
+        (coalesce((v_entities->name->>'webCount')::numeric, 0) + coalesce((v_entities->name->>'newsCount')::numeric, 0)) desc
+      ) into v_ranked_names
+      from unnest(v_entity_names) as name;
+
+      if v_n > 1 then
+        select i into v_brand_rank from unnest(v_ranked_names) with ordinality as t(name, i) where t.name = v_brand_key;
+        if v_brand_rank is not null then
+          v_standing_score := 100.0 * (v_n - v_brand_rank) / (v_n - 1);
+          v_research_scores := v_research_scores || jsonb_build_object('Competitive standing', round(v_standing_score));
+        end if;
+      end if;
+
+      -- distinctiveness: brand's own auto-discovered site, if fetched ok
+      v_site := v_entities->v_brand_key->'site';
+      if v_site is not null and v_site <> 'null'::jsonb then
+        v_distinct_score := 50
+          + case when (v_site->>'titleHasBrand')::boolean then 20 else 0 end
+          + case when (v_site->>'hasMetaDescription')::boolean then 15 else 0 end
+          + case when (v_site->>'hasStructuredData')::boolean then 15 else 0 end;
+        v_research_scores := v_research_scores || jsonb_build_object('Distinctiveness', least(100, v_distinct_score));
+      end if;
+
+      -- perception: Deep-tier social listening (brand only) — mention
+      -- volume on a saturating curve, so a handful of mentions already
+      -- moves the score but it doesn't run away unbounded
+      v_social_mentions := (v_entities->v_brand_key->>'socialMentions')::numeric;
+      if v_social_mentions is not null then
+        v_social_score := 100.0 * v_social_mentions / (v_social_mentions + 8);
+        v_research_scores := v_research_scores || jsonb_build_object('Perception', round(v_social_score));
+      end if;
+    end if;
+  end if;
+
+  -- 1. score each dimension from the 3 questions belonging to it, blended
+  --    50/50 with the matching research score where one exists
   foreach v_dname in array v_dim_order loop
     select avg(
       case
@@ -187,8 +299,13 @@ begin
     ) into v_score
     from question_bank qb
     where qb.dimension = v_dname;
+    v_score := coalesce(v_score, 33);
 
-    v_dim_scores := v_dim_scores || jsonb_build_object(v_dname, round(coalesce(v_score, 33)));
+    if v_research_scores ? v_dname then
+      v_score := (v_score + (v_research_scores->>v_dname)::numeric) / 2.0;
+    end if;
+
+    v_dim_scores := v_dim_scores || jsonb_build_object(v_dname, round(v_score));
   end loop;
 
   -- 2. get or seed this category's benchmark row
@@ -275,10 +392,10 @@ begin
   -- 5. persist the audit
   insert into audits (
     user_id, brand, category, market, competitors, answers, status,
-    overall_score, peer_median, peer_count, quartile, dimensions, gaps
+    overall_score, peer_median, peer_count, quartile, dimensions, gaps, research
   ) values (
     auth.uid(), p_brand, p_category, p_market, p_competitors, p_answers, 'scored',
-    round(v_overall), round(v_peer_median), v_peer_count, v_quartile, v_dim_results, v_gaps
+    round(v_overall), round(v_peer_median), v_peer_count, v_quartile, v_dim_results, v_gaps, p_research
   ) returning id into v_audit_id;
 
   return jsonb_build_object(
@@ -288,9 +405,13 @@ begin
     'peerCount', v_peer_count,
     'quartile', v_quartile,
     'dimensions', v_dim_results,
-    'gaps', v_gaps
+    'gaps', v_gaps,
+    'researchApplied', coalesce(
+      (select jsonb_agg(k) from jsonb_object_keys(v_research_scores) k),
+      '[]'::jsonb
+    )
   );
 end;
 $$;
 
-grant execute on function public.score_new_audit(text, text, text, text[], jsonb) to anon, authenticated;
+grant execute on function public.score_new_audit(text, text, text, text[], jsonb, jsonb) to anon, authenticated;

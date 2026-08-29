@@ -3,17 +3,25 @@ import { StyleSheet, Text, View } from 'react-native';
 import { color, fontFamily } from '../theme/tokens';
 import type { DimensionResult } from '../state/types';
 
-export function DimensionBar({ dimension }: { dimension: DimensionResult }) {
+export function DimensionBar({
+  dimension,
+  researched,
+}: {
+  dimension: DimensionResult;
+  /** True when live research (not just self-report) contributed to this dimension's score. */
+  researched?: boolean;
+}) {
   const { key, score, peerMedian, note } = dimension;
   const below = score < peerMedian;
   const fillPct = Math.max(0, Math.min(100, score));
   const peerPct = Math.max(0, Math.min(100, peerMedian));
+  const basisLabel = researched ? 'Your answers + live research' : 'Your answers only';
 
   return (
     <View
       style={styles.wrap}
       accessible
-      accessibilityLabel={`${key}: ${score} of 100, peer median ${peerMedian}`}
+      accessibilityLabel={`${key}: ${score} of 100, peer median ${peerMedian}. Basis: ${basisLabel}.`}
     >
       <View style={styles.topRow}>
         <Text style={styles.name}>{key}</Text>
@@ -31,6 +39,7 @@ export function DimensionBar({ dimension }: { dimension: DimensionResult }) {
         <View style={[styles.peerMarker, { left: `${peerPct}%` }]} />
       </View>
       <Text style={styles.note}>{note}</Text>
+      <Text style={[styles.basis, researched && styles.basisResearched]}>{basisLabel}</Text>
     </View>
   );
 }
@@ -64,4 +73,13 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(244,240,226,0.55)',
   },
   note: { fontSize: 12, color: color.mutedText, fontFamily: fontFamily.body },
+  basis: {
+    fontFamily: fontFamily.mono,
+    fontSize: 9.5,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+    color: 'rgba(244,240,226,0.3)',
+    flexShrink: 0,
+  },
+  basisResearched: { color: 'rgba(240,217,138,0.6)' },
 });

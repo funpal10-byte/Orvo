@@ -10,9 +10,37 @@ type RpcResponse = {
   quartile: ScoringResult['quartile'];
   dimensions: Array<{ key: DimensionKey; score: number; peerMedian: number; note: string }>;
   gaps: Array<{ rank: string; title: string; effortImpact: string; body: string; suiteName: string }>;
+  researchApplied: DimensionKey[];
 };
 
 export type RemoteScoringResult = ScoringResult & { auditId: string };
+
+// Calls the research-audit Edge Function: real web/news presence (and, on
+// the Deep tier, a social-mentions scan) for the brand and every named
+// competitor via Brave Search, not just self-report. Skipped entirely on
+// the Quick tier — no network call, no API usage. Best-effort otherwise:
+// returns null on any failure (missing API key, network, function not
+// deployed yet) so scoring always proceeds without it rather than blocking
+// the user.
+async function tryResearch(audit: AuditRecord): Promise<unknown | null> {
+  if (audit.researchTier === 'quick') return null;
+
+  try {
+    const { data, error } = await supabase.functions.invoke('research-audit', {
+      body: {
+        brand: audit.brand,
+        category: audit.category,
+        competitors: audit.competitors,
+        website: audit.website || undefined,
+        tier: audit.researchTier,
+      },
+    });
+    if (error || !data || data.error) return null;
+    return data;
+  } catch {
+    return null;
+  }
+}
 
 // Calls the score_new_audit Postgres function (supabase/schema.sql), which
 // scores the audit against server-owned weights and a real, growing peer
@@ -22,12 +50,15 @@ export type RemoteScoringResult = ScoringResult & { auditId: string };
 export async function runRemoteScoring(audit: AuditRecord): Promise<RemoteScoringResult> {
   await ensureSignedIn();
 
+  const research = await tryResearch(audit);
+
   const { data, error } = await supabase.rpc('score_new_audit', {
     p_brand: audit.brand,
     p_category: audit.category,
     p_market: audit.market,
     p_competitors: audit.competitors,
     p_answers: audit.answers,
+    p_research: research,
   });
 
   if (error) {
@@ -43,5 +74,6 @@ export async function runRemoteScoring(audit: AuditRecord): Promise<RemoteScorin
     quartile: result.quartile,
     dimensions: result.dimensions,
     gaps: result.gaps,
+    researchApplied: result.researchApplied ?? [],
   };
 }
