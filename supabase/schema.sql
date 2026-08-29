@@ -159,8 +159,9 @@ on conflict (dimension) do update set suite_name = excluded.suite_name;
 -- then). Consistency and Internal alignment stay self-report-only always —
 -- nothing external reliably measures those. Pass null to skip entirely
 -- (the Quick tier) — degrades cleanly to the original self-report-only
--- scoring either way, e.g. if the research call failed or the Brave API
--- key isn't configured yet. The response's `researchApplied` array tells
+-- scoring either way, e.g. if the research call failed or the Google
+-- Custom Search API keys aren't configured yet. The response's
+-- `researchApplied` array tells
 -- the client exactly which dimensions research actually touched for this
 -- specific audit, for the UI to label per-dimension basis honestly.
 -- ============================================================

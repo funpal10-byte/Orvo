@@ -1,12 +1,12 @@
 // research-audit — Supabase Edge Function (Deno)
 //
 // Looks up real, external signal for the audited brand AND every named
-// competitor (not just the brand) via the Brave Search API:
+// competitor (not just the brand) via the Google Custom Search JSON API:
 //
-// - Standard tier: web presence + recent news mentions for every entity,
-//   plus a fetch + light analysis of the brand's official site (the URL
-//   the user gave at setup, or auto-discovered from the top web result if
-//   they didn't).
+// - Standard tier: web presence + recent (date-restricted) mentions for
+//   every entity, plus a fetch + light analysis of the brand's official
+//   site (the URL the user gave at setup, or auto-discovered from the top
+//   web result if they didn't).
 // - Deep tier: Standard, plus a live scan of what's being said about the
 //   BRAND on LinkedIn/Instagram/X (site-scoped web search as a proxy —
 //   none of those platforms' own APIs are usable here without their own
@@ -18,14 +18,20 @@
 // Perception, instead of relying purely on self-reported answers — see the
 // comment on that function in schema.sql for exactly how.
 //
+// Uses Google's Custom Search JSON API rather than Brave Search: Brave's
+// signup didn't have a free option available when this was set up. Google's
+// free tier is 100 queries/day (https://developers.google.com/custom-search/v1/overview),
+// and reuses the same Google Cloud account already needed for Google
+// sign-in, so no separate vendor account. There's no separate news
+// endpoint on the free tier — "recent mentions" is approximated with the
+// same web search plus `dateRestrict=m1` (past month).
+//
 // NOT verified live — this environment has no network path to Supabase or
 // any external API, so this could not be run end-to-end. Deploy via the
 // Supabase dashboard's Edge Functions UI (paste this file, no CLI needed —
 // see supabase/README.md) and test one real audit of each tier before
-// trusting the output; if it errors, check the BRAVE_API_KEY secret is set
-// (Edge Functions → Manage secrets) and that your Brave Search API plan
-// includes the /news/search endpoint (falls back to newsCount: 0 if not,
-// so a missing news feature alone shouldn't break this).
+// trusting the output; if it errors, check the GOOGLE_CSE_API_KEY and
+// GOOGLE_CSE_CX secrets are both set (Edge Functions → Manage secrets).
 //
 // Called from the client as supabase.functions.invoke('research-audit', ...)
 // (src/state/remoteScoring.ts, only for the standard/deep tiers — the
@@ -33,16 +39,15 @@
 // caller's session JWT automatically — Supabase's function gateway checks
 // it before this code runs, so no separate auth check is needed here.
 
-const BRAVE_WEB_SEARCH_URL = 'https://api.search.brave.com/res/v1/web/search';
-const BRAVE_NEWS_SEARCH_URL = 'https://api.search.brave.com/res/v1/news/search';
+const GOOGLE_CSE_URL = 'https://www.googleapis.com/customsearch/v1';
 const FETCH_TIMEOUT_MS = 5000;
 const MAX_ENTITIES = 6; // brand + up to 5 competitors, matches the app's competitor cap
 
-// Kept short and to 3 platforms on purpose: each one is a separate Brave
+// Kept short and to 3 platforms on purpose: each one is a separate search
 // query, and this only runs for the brand (not competitors) on the Deep
-// tier specifically to keep total query volume per audit bounded — a free
-// Brave Search API plan has a monthly cap, and this already uses ~12-14
-// queries/audit on Standard, ~15-17 on Deep.
+// tier specifically to keep total query volume per audit bounded — the
+// free Google CSE tier caps at 100 queries/day, and this already uses
+// ~12-14 queries/audit on Standard, ~15-17 on Deep.
 const SOCIAL_SITE_FILTERS = ['site:linkedin.com', 'site:instagram.com', '(site:x.com OR site:twitter.com)'];
 
 type SiteSignal = {
@@ -70,45 +75,49 @@ function withTimeout(promise: Promise<Response>, ms: number): Promise<Response> 
   ]);
 }
 
-async function braveSearch(url: string, apiKey: string, query: string, count = 10): Promise<unknown> {
+async function googleSearch(
+  apiKey: string,
+  cx: string,
+  query: string,
+  opts: { dateRestrict?: string } = {},
+): Promise<unknown> {
+  const params = new URLSearchParams({ key: apiKey, cx, q: query, num: '10' });
+  if (opts.dateRestrict) params.set('dateRestrict', opts.dateRestrict);
+
   const res = await withTimeout(
-    fetch(`${url}?q=${encodeURIComponent(query)}&count=${count}`, {
-      headers: { Accept: 'application/json', 'X-Subscription-Token': apiKey },
-    }),
+    fetch(`${GOOGLE_CSE_URL}?${params.toString()}`, { headers: { Accept: 'application/json' } }),
     FETCH_TIMEOUT_MS,
   );
-  if (!res.ok) throw new Error(`Brave search ${res.status}`);
+  if (!res.ok) throw new Error(`Google CSE ${res.status}`);
   return res.json();
 }
 
 async function webResultCountAndTopUrl(
   apiKey: string,
+  cx: string,
   query: string,
 ): Promise<{ count: number; topUrl: string | null }> {
-  const data = (await braveSearch(BRAVE_WEB_SEARCH_URL, apiKey, query)) as {
-    web?: { results?: Array<{ url?: string }> };
-  };
-  const results = data.web?.results ?? [];
-  return { count: results.length, topUrl: results[0]?.url ?? null };
+  const data = (await googleSearch(apiKey, cx, query)) as { items?: Array<{ link?: string }> };
+  const items = data.items ?? [];
+  return { count: items.length, topUrl: items[0]?.link ?? null };
 }
 
-async function webResultCount(apiKey: string, query: string): Promise<number> {
+async function webResultCount(apiKey: string, cx: string, query: string): Promise<number> {
   try {
-    const { count } = await webResultCountAndTopUrl(apiKey, query);
+    const { count } = await webResultCountAndTopUrl(apiKey, cx, query);
     return count;
   } catch {
     return 0;
   }
 }
 
-async function newsResultCount(apiKey: string, query: string): Promise<number> {
+async function recentResultCount(apiKey: string, cx: string, query: string): Promise<number> {
   try {
-    const data = (await braveSearch(BRAVE_NEWS_SEARCH_URL, apiKey, query, 20)) as {
-      results?: unknown[];
+    const data = (await googleSearch(apiKey, cx, query, { dateRestrict: 'm1' })) as {
+      items?: unknown[];
     };
-    return data.results?.length ?? 0;
+    return data.items?.length ?? 0;
   } catch {
-    // News endpoint may not be on every plan — never fail the whole audit for it.
     return 0;
   }
 }
@@ -135,22 +144,23 @@ async function analyzeSite(url: string, brand: string): Promise<SiteSignal> {
   }
 }
 
-async function socialMentionCount(apiKey: string, brand: string): Promise<number> {
+async function socialMentionCount(apiKey: string, cx: string, brand: string): Promise<number> {
   const counts = await Promise.all(
-    SOCIAL_SITE_FILTERS.map((filter) => webResultCount(apiKey, `${brand} ${filter}`)),
+    SOCIAL_SITE_FILTERS.map((filter) => webResultCount(apiKey, cx, `${brand} ${filter}`)),
   );
   return counts.reduce((a, b) => a + b, 0);
 }
 
 async function researchEntity(
   apiKey: string,
+  cx: string,
   name: string,
   category: string,
   opts: { isBrand: boolean; website?: string; deep: boolean },
 ): Promise<EntitySignal> {
   const [web, news] = await Promise.allSettled([
-    webResultCountAndTopUrl(apiKey, `${name} ${category}`),
-    newsResultCount(apiKey, name),
+    webResultCountAndTopUrl(apiKey, cx, `${name} ${category}`),
+    recentResultCount(apiKey, cx, name),
   ]);
 
   const webCount = web.status === 'fulfilled' ? web.value.count : 0;
@@ -162,7 +172,7 @@ async function researchEntity(
   if (opts.isBrand) {
     const siteUrl = opts.website || topUrl;
     if (siteUrl) entity.site = await analyzeSite(siteUrl, name);
-    if (opts.deep) entity.socialMentions = await socialMentionCount(apiKey, name);
+    if (opts.deep) entity.socialMentions = await socialMentionCount(apiKey, cx, name);
   }
 
   return entity;
@@ -174,9 +184,10 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const apiKey = Deno.env.get('BRAVE_API_KEY');
-    if (!apiKey) {
-      return new Response(JSON.stringify({ error: 'BRAVE_API_KEY not configured' }), {
+    const apiKey = Deno.env.get('GOOGLE_CSE_API_KEY');
+    const cx = Deno.env.get('GOOGLE_CSE_CX');
+    if (!apiKey || !cx) {
+      return new Response(JSON.stringify({ error: 'GOOGLE_CSE_API_KEY / GOOGLE_CSE_CX not configured' }), {
         status: 200, // 200 on purpose: the caller treats this as "no research", not a hard failure
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -202,7 +213,7 @@ Deno.serve(async (req: Request) => {
 
     const results = await Promise.all(
       uniqueNames.map((name) =>
-        researchEntity(apiKey, name, category, {
+        researchEntity(apiKey, cx, name, category, {
           isBrand: name === brand,
           website: name === brand ? website : undefined,
           deep,

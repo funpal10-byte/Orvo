@@ -45,21 +45,35 @@ benchmark data).
       save.
 
 5. **Set up real research** (Standard/Deep audit tiers — Quick works
-   without this):
-   a. Get a free API key at [brave.com/search/api](https://brave.com/search/api)
-      (the free tier covers a few thousand queries/month — each audit uses
-      roughly 12-14 queries on Standard, 15-17 on Deep, so budget
-      accordingly if usage grows).
-   b. Dashboard → **Edge Functions → Deploy a new function**. Name it
+   without this). Uses Google's Custom Search JSON API, not Brave — Brave's
+   signup had no free option available when this was set up. Google's free
+   tier is 100 queries/day, and reuses the **same Google Cloud project**
+   from step 4, so no new vendor account:
+   a. [console.cloud.google.com](https://console.cloud.google.com), same
+      project as step 4 → **APIs & Services → Library** → search **"Custom
+      Search API"** → **Enable**.
+   b. **APIs & Services → Credentials → Create Credentials → API key** →
+      copy it (this is `GOOGLE_CSE_API_KEY`). Optionally click into it and
+      restrict it to only the Custom Search API, for safety.
+   c. Go to [programmablesearchengine.google.com](https://programmablesearchengine.google.com/)
+      → **Add** → create a search engine with **"Search the entire web"**
+      turned on (not scoped to specific sites). After it's created, open its
+      **Setup/Basics** page and copy the **Search engine ID** — that's
+      `GOOGLE_CSE_CX`.
+   d. Dashboard → **Edge Functions → Deploy a new function**. Name it
       exactly **`research-audit`**, then paste the full contents of
       `functions/research-audit/index.ts` into the code editor and deploy —
       no CLI needed, this is entirely in the browser.
-   c. Dashboard → **Edge Functions → research-audit → Manage secrets** (or
-      **Settings → Edge Functions → Secrets**) → add `BRAVE_API_KEY` with
-      the key from step (a).
-   d. Without this step the app still works — it just silently skips
+   e. Dashboard → **Edge Functions → research-audit → Manage secrets** (or
+      **Settings → Edge Functions → Secrets**) → add both `GOOGLE_CSE_API_KEY`
+      and `GOOGLE_CSE_CX` from steps (b) and (c).
+   f. Without this step the app still works — it just silently skips
       research and scores from self-report only, same as the Quick tier,
       regardless of which tier the user picked.
+   g. Each audit uses roughly 12-14 queries on Standard, 15-17 on Deep — at
+      100/day free, that's only a handful of Deep audits/day before hitting
+      the cap. Fine for testing; revisit (paid Google tier, or a different
+      provider) once real usage picks up.
 
 That's it — the app already has the project URL and publishable key wired
 in (`app.json` → `expo.extra`). Both are safe to commit: the publishable
@@ -76,8 +90,8 @@ Real, in Postgres:
   submitted for that category (fully real by ~20 audits)
 - Audit storage, scoped to the signed-in (possibly anonymous) user via RLS
 
-Real, via the `research-audit` Edge Function + Brave Search API (Standard
-and Deep tiers — see "Research tiers" below):
+Real, via the `research-audit` Edge Function + Google Custom Search API
+(Standard and Deep tiers — see "Research tiers" below):
 - Web presence for the brand and every named competitor
 - Recent news mentions for each
 - The brand's own site: auto-discovered (or the URL given at setup),
