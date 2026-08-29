@@ -17,7 +17,7 @@ export type RemoteScoringResult = ScoringResult & { auditId: string };
 
 // Calls the research-audit Edge Function: real web/news presence (and, on
 // the Deep tier, a social-mentions scan) for the brand and every named
-// competitor via Google Custom Search, not just self-report. Skipped entirely on
+// competitor via SerpApi, not just self-report. Skipped entirely on
 // the Quick tier — no network call, no API usage. Best-effort otherwise:
 // returns null on any failure (missing API key, network, function not
 // deployed yet) so scoring always proceeds without it rather than blocking

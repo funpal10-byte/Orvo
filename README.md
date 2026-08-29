@@ -42,7 +42,7 @@ src/
   lib/                        supabase client + anonymous-auth bootstrap
 assets/brand/                 ORVO logo + ensō mark (production assets)
 supabase/                     schema.sql (tables, RLS, scoring function) + setup steps
-  functions/research-audit/    Edge Function: real web/news/social research via Google Custom Search
+  functions/research-audit/    Edge Function: real web/news/social research via SerpApi
 ```
 
 ## Running it
@@ -110,7 +110,7 @@ mapping and peer benchmarks (seeded synthetically per category, blended
 toward real submitted scores as more audits come in) live in Postgres, auth
 is email magic-link + Google (both upgrade an anonymous session in place,
 `src/lib/supabase.ts`), and the `research-audit` Edge Function pulls real
-web/news/social signal via Google Custom Search for the Standard/Deep tiers.
+web/news/social signal via SerpApi for the Standard/Deep tiers.
 `src/state/scoring.ts` (the old client-side mock) is kept only as an
 offline/network-failure fallback in `runScoringForAudit`
 (`src/state/auditStore.ts`) — never blocks the user if Supabase is

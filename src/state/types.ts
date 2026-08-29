@@ -28,7 +28,7 @@ export type AuditHistoryEntry = {
 
 // Quick: 18 self-reported questions only, no network needed to score.
 // Standard: adds real web + news presence (brand and every named
-// competitor) via Google Custom Search, blended into Search & answer visibility,
+// competitor) via SerpApi, blended into Search & answer visibility,
 // Competitive standing and Distinctiveness.
 // Deep: Standard, plus a live scan of what's being said about the brand on
 // LinkedIn/Instagram/X, blended into Perception.
